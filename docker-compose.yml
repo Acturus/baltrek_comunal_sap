@@ -1,0 +1,18 @@
+services:
+  sap_dev:
+    # 1. Instruye a Docker Compose a construir la imagen
+    #    usando el Dockerfile que está en la carpeta actual (.).
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    # 2. Asigna un nombre específico al contenedor, para fácil acceso (opcional).
+    container_name: sap-dev
+
+    volumes:
+      - ./scripts:/scripts
+
+    # 3. Anula el CMD del Dockerfile para usar el comando que mantiene el contenedor activo,
+    #    asegurando que tini lo ejecute (que es lo que ya definiste en el Dockerfile).
+    #    NOTA: En este caso, el CMD ya está en el Dockerfile, pero lo incluimos para claridad.
+    command: ["tail", "-f", "/dev/null"]

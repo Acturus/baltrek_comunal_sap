@@ -1,2 +1,2 @@
 # Baltrek Comunal SAP
-Entorno para establecer conexiones TLS1 con el entorno SAP de Comunal
+Entorno para establecer conexiones viejas con el entorno SAP de Comunal

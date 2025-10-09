@@ -1,0 +1,21 @@
+# .gitignore
+
+# 1. Credenciales y Configuraciones
+# Ignora el archivo real de configuración (debe subirse solo el _sample)
+/scripts/config.py
+# Ignora archivos de configuración de variables de entorno (ej. para Docker)
+.env
+
+# 2. Caché y Dependencias de Python
+# Ignora la carpeta de entornos virtuales (si usas venv)
+/venv/
+# Ignora la caché de Python
+__pycache__/
+*.pyc
+
+# 3. Caché de Docker
+# Ignora cualquier archivo temporal generado por la construcción de Docker
+.dockerignore
+
+# 4. Archivos de sistema y logs
+*.log
