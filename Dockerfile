@@ -33,6 +33,7 @@ RUN wget -q -O /usr/local/bin/tini https://github.com/krallin/tini/releases/down
 # Crear carpeta de scripts y configurar el directorio de trabajo
 RUN mkdir /scripts
 WORKDIR /scripts
+COPY scripts/package*.json ./
 RUN npm install
 
 # 5. CONFIGURACIÓN DE INICIO
