@@ -1,5 +1,5 @@
 services:
-  sap_dev:
+  ubuntu:
     # 1. Instruye a Docker Compose a construir la imagen
     #    usando el Dockerfile que está en la carpeta actual (.).
     build:

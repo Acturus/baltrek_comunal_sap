@@ -1,0 +1,14 @@
+{
+  "name": "sap-node-connector",
+  "version": "1.0.0",
+  "description": "SAP B1 Service Layer client using Node.js.",
+  "main": "scripts/extractSuppliers.js",
+  "type": "module",
+  "scripts": {
+    "start": "node scripts/extractSuppliers.js"
+  },
+  "dependencies": {
+    "axios": "1.12.2",
+    "dotenv": "17.2.3"
+  }
+}
