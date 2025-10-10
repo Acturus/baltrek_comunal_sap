@@ -1,6 +1,20 @@
-import axios from 'axios';
+import fs from 'fs';
+import path from 'path';
 import https from 'https';
+import axios from 'axios';
 import dotenv from 'dotenv';
+
+// Se valida si se creo el .env
+const ENV_FILE_PATH = path.resolve(process.cwd(), '.env');
+
+if (!fs.existsSync(ENV_FILE_PATH)) {
+    console.error(`\n======================================================`);
+    console.error(`❌ ERROR: Archivo .env no encontrado.`);
+    console.error(`Por favor, crea el archivo .env en este directorio`);
+    console.error(`Usa .env.sample como guía.`);
+    console.error(`======================================================\n`);
+    process.exit(1); // Detiene la ejecución si el archivo no existe
+}
 
 // Cargar variables de entorno del archivo .env
 dotenv.config();
@@ -11,6 +25,7 @@ const COMPANY_DB = process.env.SAP_COMPANY_DB;
 const USERNAME = process.env.SAP_USERNAME;
 const PASSWORD = process.env.SAP_PASSWORD;
 const SECMETHOD = process.env.SEC_METHOD;
+
 
 const agent = new https.Agent({
     rejectUnauthorized: false,
