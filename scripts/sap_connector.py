@@ -53,6 +53,8 @@ def get_sap_session():
         "UserName": USERNAME,
         "Password": PASSWORD
     }
+
+    response = None
     
     # Crea la sesión e instala el adaptador
     session = requests.Session()
