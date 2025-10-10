@@ -1,3 +1,5 @@
+# sap_connector.py (Código Final y Robustecido)
+
 import requests
 import json
 import logging
@@ -31,40 +33,57 @@ def run_curl_login():
         f"{SERVICE_LAYER_URL}/Login"
     ]
     
+    # Inicializamos las variables
+    headers = None
+    
     try:
         # Ejecutar el comando curl y capturar la salida
         process = subprocess.run(
             curl_command, 
             capture_output=True, 
             text=True, 
-            check=True, # Lanza excepción si curl devuelve error
+            check=True, # Lanza excepción si curl devuelve error de comando
             timeout=15
         )
         
         headers = process.stdout
         
-        # 1. Extraer Cookies: Buscar la línea Set-Cookie
+        # 1. VERIFICACIÓN CRÍTICA: Asegurarse de que el login haya sido 200 OK
+        if "HTTP/1.1 200 OK" not in headers:
+            logging.error("CURL Login falló. El servidor no devolvió 200 OK.")
+            logging.error(f"Respuesta Completa de CURL:\n{headers}")
+            raise Exception("CURL no devolvió una respuesta HTTP 200 OK. Revise credenciales.")
+
+
+        # 2. Extraer Cookies: Buscar la línea Set-Cookie
         cookie_matches = re.findall(r"Set-Cookie: (B1SESSION=[^;]+);", headers)
         routeid_matches = re.findall(r"Set-Cookie: (ROUTEID=[^;]+);", headers)
 
         if not cookie_matches or not routeid_matches:
-            raise ValueError("No se pudo obtener la cookie de sesión o ROUTEID de la respuesta de curl.")
+            raise ValueError("No se pudo obtener la cookie de sesión o ROUTEID de la respuesta.")
 
         cookie_string = f"{cookie_matches[0]}; {routeid_matches[0]}"
         
-        # 2. Extraer SessionId: Parsear el cuerpo JSON
-        body_json = headers.split('\r\n\r\n')[-1]
-        session_data = json.loads(body_json)
+        # 3. Extraer SessionId: Parsear el cuerpo JSON
+        # Dividir la respuesta por dos saltos de línea para obtener solo el cuerpo (el último elemento)
+        body_json = headers.split('\r\n\r\n')[-1].strip()
         
+        if not body_json:
+            raise ValueError("El cuerpo de respuesta de CURL está vacío.")
+
+        session_data = json.loads(body_json) 
+
         session_id = session_data.get('SessionId')
 
         return (cookie_string, session_id)
         
     except subprocess.CalledProcessError as e:
+        # Esto captura errores donde curl falla antes de obtener una respuesta HTTP válida
         logging.error(f"Fallo del subproceso CURL (Código {e.returncode}): {e.stderr.strip()}")
         return (None, None)
     except Exception as e:
-        logging.error(f"Error durante la ejecución del login CURL: {e}")
+        # Esto captura el error de JSON.loads y la excepción lanzada en el paso 1
+        logging.error(f"Error durante el procesamiento de la respuesta de CURL: {e}")
         return (None, None)
 
 
@@ -74,13 +93,14 @@ def get_sap_session():
     Retorna el objeto de sesión de requests.
     """
     
+    # 1. Intentar el login con curl y obtener la cookie
     cookie_string, session_id = run_curl_login()
     
     if not session_id:
-        logging.error("No se pudo iniciar sesión con CURL.")
+        logging.error("No se pudo iniciar sesión. Verifique logs para errores de credenciales.")
         return None
         
-    # Crear la sesión de requests e inyectar la cookie
+    # 2. Crear la sesión de requests e inyectar la cookie
     session = requests.Session()
     
     # Inyectar la cookie y headers para peticiones subsiguientes
@@ -100,12 +120,8 @@ def sap_logout(session):
     """Cierra la sesión de SAP B1."""
     if session and session.headers.get('Cookie'):
         try:
-            # Obtener el SessionId de la cookie para el logging
-            match = re.search(r"B1SESSION=(\d+)", session.headers.get('Cookie'))
-            session_id = match.group(1) if match else "Desconocida"
-            
             # El logout simplemente requiere que se envíe la cookie correcta.
             session.post(f"{SERVICE_LAYER_URL}/Logout")
-            logging.info(f"Sesión {session_id} cerrada correctamente.")
+            logging.info("Sesión cerrada correctamente.")
         except requests.exceptions.RequestException as e:
             logging.warning(f"Error al cerrar sesión: {e}")
