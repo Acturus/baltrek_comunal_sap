@@ -1,4 +1,5 @@
 import { getSapSession, sapLogout } from './sapConnector.js';
+import fs from 'fs/promises';
 
 /**
  * Consulta el Service Layer para obtener datos de proveedores.
@@ -25,18 +26,34 @@ async function getSupplierData(sessionInstance) {
     }
 }
 
+async function saveJsonToFile(data, filename) {
+    try {
+        const jsonString = JSON.stringify(data, null, 4);
+        await fs.writeFile(filename, jsonString, 'utf-8');
+        console.log(`\n✅ Datos guardados exitosamente en ${filename}`);
+        return true;
+    } catch (err) {
+        console.error(`\n❌ Error al guardar el archivo: ${err.message}`);
+        return false;
+    }
+}
+
+
 // --- Ejecución Principal ---
 async function main() {
     const sapSession = await getSapSession();
+    const FILENAME = 'supplier_data_output.json'; // Nombre del archivo
 
     if (sapSession) {
         console.log('🔎 Consultando datos de proveedores...');
         const suppliers = await getSupplierData(sapSession);
 
         if (suppliers) {
-            console.log('\n--- JSON de Datos de Proveedores ---');
-            console.log(JSON.stringify(suppliers, null, 4));
-            console.log(`\n✅ Total de registros encontrados: ${suppliers.length}`);
+            // CAMBIO: Llama a la nueva función de guardar en lugar de imprimir en consola
+            await saveJsonToFile(suppliers, FILENAME); 
+            console.log(`Total de registros encontrados: ${suppliers.length}`);
+        } else {
+            console.log("\nNo se pudieron obtener los datos de proveedores.");
         }
         
         await sapLogout(sapSession);
