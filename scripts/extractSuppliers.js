@@ -50,8 +50,7 @@ async function getSupplierData(sessionInstance) {
     const columnsToSelect = camposConsultaSAP.join(',');
     
     // Filtro: CardType eq 'cSupplier'
-    //const query = `/BusinessPartners?$filter=CardType eq 'cSupplier'&$select=${columnsToSelect}`;
-    const query = `/BusinessPartners?$select=${columnsToSelect}`;
+    const query = `/BusinessPartners?$filter=CardType eq 'cSupplier'&$select=${columnsToSelect}`;
 
     try {
         const response = await sessionInstance.get(query);
