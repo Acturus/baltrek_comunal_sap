@@ -3,31 +3,39 @@ import json
 import logging
 from config import SERVICE_LAYER_URL, COMPANY_DB, USERNAME, PASSWORD, CIPHER
 
-# Configurar logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-
+# Importaciones para el adaptador SSL/TLS
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.ssl_ import create_urllib3_context
 
-# Agregar el cipher obsoleto al conjunto por defecto (solo necesario para versiones antiguas de OpenSSL)
+# Configurar logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+# --- Adaptador Personalizado ---
+# Bloque necesario para que la librería requests/urllib3 reconozca el cipher obsoleto
 try:
     requests.packages.urllib3.util.ssl_.DEFAULT_CIPHERS += ":" + CIPHER
 except AttributeError:
-    pass # Ya está configurado o la versión de requests/urllib3 no lo necesita
+    pass 
 
 class LegacyTLSAdapter(HTTPAdapter):
-    """Adaptador que fuerza conexiones viejas"""
+    """
+    Adaptador personalizado que fuerza el uso de TLSv1 (TLS 1.0) y la cipher suite AES256-SHA.
+    Deshabilita la verificación del hostname para resolver el error 'ValueError' cuando se usa verify=False.
+    """
     
     def init_poolmanager(self, connections, maxsize, block=False):
         # Crear un contexto SSL/TLS específico
         ctx = create_urllib3_context()
         
+        # --- FIX CRUCIAL: Desactivar la verificación de hostname ---
+        # Resuelve el ValueError al combinar verify=False con la verificación del host.
+        ctx.check_hostname = False
+        
         try:
             ctx.minimum_version = requests.packages.urllib3.util.ssl_.TLSVersion.TLSv1_0 
             ctx.set_ciphers(CIPHER)
         except AttributeError:
-            # Fallback si las constantes de versión no existen
-            pass
+            pass 
         
         self.poolmanager = requests.packages.urllib3.poolmanager.PoolManager(
             num_pools=connections,
@@ -50,8 +58,8 @@ def get_sap_session():
     session = requests.Session()
     session.mount("https://", LegacyTLSAdapter())
     
-    # Configuración de headers para el login
-    session.verify = False # Deshabilitar verificación de certificado (--insecure)
+    # Configuración de headers e Ignorar certificado (equivale a --insecure)
+    session.verify = False 
     session.headers.update({'Content-Type': 'application/json'})
 
     try:
