@@ -19,7 +19,7 @@ RUN apt-get update && apt-get install -y \
 # 2. INSTALAR NODE.JS 20 (Usando NodeSource PPA)
 # Este es el método oficial y estable para instalar Node.js 20 en Ubuntu 18.04.
 # a) Descargar e instalar la clave y el repositorio de NodeSource
-RUN curl -fsSL https://deb.nodesource.com/setup_18.x | bash - && \
+RUN curl -fsSL https://deb.nodesource.com/setup_16.x | bash - && \
     # b) Instalar Node.js y npm
     apt-get install -y nodejs && \
     rm -rf /var/lib/apt/lists/*
