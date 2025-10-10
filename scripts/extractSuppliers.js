@@ -9,7 +9,8 @@ async function getSupplierData(sessionInstance) {
     const columnsToSelect = 'CardCode,FederalTaxID,CardName';
     
     // Filtro: CardType eq 'cSupplier'
-    const query = `/BusinessPartners?$filter=CardType eq 'cSupplier'&$select=${columnsToSelect}`;
+    //const query = `/BusinessPartners?$filter=CardType eq 'cSupplier'&$select=${columnsToSelect}`;
+    const query = `/BusinessPartners?$top=5`;
 
     try {
         const response = await sessionInstance.get(query);
