@@ -40,4 +40,4 @@ RUN npm install -g pm2
 
 # 6. CONFIGURACIÓN DE INICIO
 ENTRYPOINT ["/usr/local/bin/tini", "--"]
-CMD ["tail", "-f", "/dev/null"]
+CMD ["pm2-runtime", "start", "src/server.js"]
