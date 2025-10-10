@@ -11,6 +11,7 @@ services:
 
     volumes:
       - ./scripts:/scripts
+      - /scripts/node_modules
 
     # 3. Anula el CMD del Dockerfile para usar el comando que mantiene el contenedor activo,
     #    asegurando que tini lo ejecute (que es lo que ya definiste en el Dockerfile).
