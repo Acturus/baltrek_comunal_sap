@@ -10,12 +10,11 @@ const SERVICE_LAYER_URL = process.env.SAP_SERVICE_LAYER_URL;
 const COMPANY_DB = process.env.SAP_COMPANY_DB;
 const USERNAME = process.env.SAP_USERNAME;
 const PASSWORD = process.env.SAP_PASSWORD;
+const SECMETHOD = process.env.SEC_METHOD;
 
 const agent = new https.Agent({
-    // CRÍTICO: Ignorar certificados autofirmados/inválidos (--insecure)
     rejectUnauthorized: false,
-    // Node.js 20 deshabilita TLS 1.0 por defecto. Forzar versiones antiguas puede ser necesario
-    // secureProtocol: 'TLSv1_method', // Esto forzaría TLS 1.0, pero probaremos sin él primero.
+    secureProtocol: SECMETHOD,
 });
 
 /**
