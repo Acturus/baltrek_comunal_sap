@@ -42,6 +42,9 @@ const monday = new ApiClient({
 /**
  * Busca el ID de un grupo específico.
  */
+/**
+ * Busca el ID de un grupo específico. (Con logs de diagnóstico)
+ */
 async function getGroupId(boardId, groupName) {
   console.log(`Buscando ID del grupo "${groupName}"...`);
   const query = `query($boardId: ID!) {
@@ -52,14 +55,24 @@ async function getGroupId(boardId, groupName) {
       }
     }
   }`;
+  
+  let response; // La declaramos aquí para que sea accesible en el catch
+
   try {
-    // 👇 CORRECCIÓN: Se quitó el wrapper { variables: ... }
-    const response = await monday.request(query, { boardId: parseInt(boardId) });
-    
+    response = await monday.request(query, { boardId: parseInt(boardId) });
+
+    // --- INICIO DE LOG DE DIAGNÓSTICO ---
+    console.log("==================== RESPUESTA DE MONDAY (getGroupId) ====================");
+    console.log(JSON.stringify(response, null, 2));
+    console.log("==========================================================================");
+    // --- FIN DE LOG ---
+
     if (response.errors) {
        console.error("Error de API al buscar grupos:", response.errors);
        return null;
     }
+
+    // Esta es la línea que está fallando (significa que response.data es undefined)
     const groups = response.data.boards[0].groups;
     const group = groups.find(g => g.title.trim().toLowerCase() === groupName.trim().toLowerCase());
     
@@ -72,10 +85,15 @@ async function getGroupId(boardId, groupName) {
       return null;
     }
   } catch (err) {
-    // El error que viste (invalid type) es un error de GraphQL, 
-    // por lo que será capturado por 'response.errors' arriba.
-    // Este 'catch' es para errores de red (ej. fetch failed).
-    console.error("Error de RED/SDK al buscar grupos:", err.message, err);
+    // El TypeError (Cannot read properties) caerá aquí
+    console.error(`Error de RED/SDK al buscar grupos: ${err.message}`, err);
+
+    // --- LOG ADICIONAL EN CASO DE ERROR ---
+    // Imprime el objeto 'response' que causó el fallo
+    console.error("La respuesta (response) que causó el error fue:");
+    console.error(JSON.stringify(response, null, 2));
+    // --- FIN DE LOG ADICIONAL ---
+    
     return null;
   }
 }
