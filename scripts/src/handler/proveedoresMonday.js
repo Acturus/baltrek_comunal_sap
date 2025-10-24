@@ -1,35 +1,77 @@
-// sync.js
 import 'dotenv/config';
-import mondaySdk from 'monday-sdk-js';
+// Importamos el nuevo cliente
+import { mondayApiClient } from '@mondaydotcomorg/api';
 
-// Importa las funciones de DATOS de SAP (de mi sugerencia anterior)
-import { getAllSupplierData, createDeltaFilter } from '../services/supplierService.js'; 
-// Importa las funciones de SESIÓN de SAP (de tu archivo)
-import { getSapSession, sapLogout } from '../config/sap.js';
+// Importa las funciones de DATOS de SAP
+import { getAllSupplierData, createDeltaFilter } from './sapService.js'; 
+// Importa las funciones de SESIÓN de SAP
+import { getSapSession, sapLogout } from './sap.js';
 
-// --- CONFIGURACIÓN REQUERIDA ---
-// Pega aquí los IDs que obtuviste del script 'find_ids.js'
-
-const MONDAY_BOARD_ID = 18213048823; // ⚠️ REEMPLAZA ESTO
+// --- CONFIGURACIÓN REQUERIDA (¡COMPLETADA!) ---
+const MONDAY_BOARD_ID = 18213048823;
 
 const COLUMN_IDS = {
-  "Name": "name",
+  "Name": "name", // Columna nativa "Elemento"
   "Código SN": "text_mkwt7af2",
-  "RUC": "numeric_mkwtxtnh",
+  "RUC": "numeric_mkwtxtnh", // Tipo numérico
   "Nombre SN": "text_mkwt3xdn",
   "Creación SAP": "date_mkx1an41",
   "Última Actualización SAP": "date_mkx14xa9",
   "Registro de creación": "pulse_log_mkx1jrw3",
   "Última actualización": "pulse_updated_mkx17xqq"
-}
+};
+// --- FIN DE CONFIGURACIÓN ---
 
-const monday = mondaySdk({ 
-    token: process.env.MONDAY_API_KEY,
-    apiVersion: "2023-10"
+
+// Inicializamos el nuevo cliente (usando la API 2024-01)
+const monday = mondayApiClient({ 
+  token: process.env.MONDAY_API_KEY,
+  apiVersion: "2024-01" 
 });
 
+// ===================================================================
+// Todas las funciones que ya depuramos (con corrección en 'find')
+// ===================================================================
+
 /**
- * Obtiene el timestamp más reciente de la columna 'Última Actualización SAP'
+ * Busca el ID de un grupo específico.
+ */
+async function getGroupId(boardId, groupName) {
+  console.log(`Buscando ID del grupo "${groupName}"...`);
+  const query = `query($boardId: ID!) {
+    boards(ids: [$boardId]) {
+      groups {
+        id
+        title
+      }
+    }
+  }`;
+  try {
+    const response = await monday.api(query, { variables: { boardId: parseInt(boardId) } });
+    if (response.errors) {
+      console.error("Error de API al buscar grupos:", response.errors);
+      return null;
+    }
+    const groups = response.data.boards[0].groups;
+    const group = groups.find(g => g.title.trim().toLowerCase() === groupName.trim().toLowerCase());
+    
+    if (group) {
+      console.log(`Grupo encontrado. ID: ${group.id}`);
+      return group.id;
+    } else {
+      console.error(`❌ No se encontró el grupo "${groupName}".`);
+      console.log("Grupos disponibles:", groups.map(g => g.title));
+      return null;
+    }
+  } catch (err) {
+    console.error("Error al buscar grupos:", err.message);
+    return null;
+  }
+}
+
+
+/**
+ * Obtiene el timestamp más reciente (versión corregida).
  */
 async function getLatestSyncTimestamp() {
   const dateColumnId = COLUMN_IDS["Última Actualización SAP"];
@@ -40,7 +82,7 @@ async function getLatestSyncTimestamp() {
 
   console.log(`Buscando última fecha de sincronización en Monday (Columna: ${dateColumnId})...`);
 
-  // --- INICIO DE LA CORRECCIÓN (Versión limpia sin comentarios) ---
+  // Versión final con 2 variables y 'is_not_empty'
   const query = `query($boardId: ID!, $columnIdString: String!, $columnIdID: ID!) {
     boards(ids: [$boardId]) {
       items_page(
@@ -59,7 +101,6 @@ async function getLatestSyncTimestamp() {
       }
     }
   }`;
-  // --- FIN DE LA CORRECCIÓN ---
 
   try {
     const response = await monday.api(query, {
@@ -96,12 +137,15 @@ async function getLatestSyncTimestamp() {
 }
 
 /**
- * Busca un item en Monday usando el valor de la columna RUC.
- * @returns {object | null} El item de Monday (con id) o null si no se encuentra.
+ * Busca un item en Monday usando el valor de la columna RUC (versión robusta).
+ * ¡CORREGIDO para columna numérica!
  */
 async function findMondayItemByRUC_fixed(rucValue) {
   const rucColumnId = COLUMN_IDS["RUC"];
   
+  // ¡CORRECCIÓN! 
+  // La variable $columnValue debe ser String, pero la API de Monday es
+  // lo suficientemente inteligente como para comparar un String con una columna numérica.
   const query = `query($boardId: ID!, $columnId: String!, $columnValue: String!) {
     items_page_by_column_values(
       board_id: $boardId,
@@ -121,17 +165,15 @@ async function findMondayItemByRUC_fixed(rucValue) {
       variables: {
         boardId: MONDAY_BOARD_ID,
         columnId: rucColumnId,
-        columnValue: rucValue
+        // Enviamos el RUC como String. Monday lo manejará.
+        columnValue: String(rucValue) 
       }
     });
 
-    // VERIFICACIÓN 1: El SDK reporta errores de GraphQL?
     if (response.errors) {
       console.error(`❌ Error de API al buscar RUC ${rucValue}:`, JSON.stringify(response.errors, null, 2));
       return null;
     }
-    
-    // VERIFICACIÓN 2: La respuesta tiene 'data'? (Contra rate limits)
     if (!response.data) {
       console.error(`❌ Error inesperado (sin 'data') al buscar RUC ${rucValue}.`, response);
       return null;
@@ -141,7 +183,6 @@ async function findMondayItemByRUC_fixed(rucValue) {
     return items.length > 0 ? items[0] : null;
 
   } catch (err) {
-    // Error de red o del SDK
     console.error(`❌ Error de RED/SDK buscando item con RUC ${rucValue}:`, err.message);
     return null;
   }
@@ -149,17 +190,20 @@ async function findMondayItemByRUC_fixed(rucValue) {
 
 /**
  * Formatea un objeto de proveedor SAP al formato de columna de Monday.
- * @param {object} sapSupplier - El objeto de proveedor de SAP.
- * @returns {object} Objeto listo para la API de Monday (ej. { "texto": "valor" })
  */
 function formatSapToMondayColumns(sapSupplier) {
   const columnValues = {};
-
-  // --- Mapeo de campos ---
   
-  if (COLUMN_IDS["RUC"]) {
-    columnValues[COLUMN_IDS["RUC"]] = sapSupplier.FederalTaxID || "";
+  // ¡CORRECCIÓN! Convertir el RUC (texto de SAP) a número para Monday
+  if (COLUMN_IDS["RUC"] && sapSupplier.FederalTaxID) {
+    const rucAsNumber = parseFloat(sapSupplier.FederalTaxID);
+    if (!isNaN(rucAsNumber)) {
+      columnValues[COLUMN_IDS["RUC"]] = rucAsNumber;
+    } else {
+      console.warn(`RUC "${sapSupplier.FederalTaxID}" no es un número válido. Se omitirá.`);
+    }
   }
+  
   if (COLUMN_IDS["Código SN"]) {
     columnValues[COLUMN_IDS["Código SN"]] = sapSupplier.CardCode || "";
   }
@@ -167,8 +211,6 @@ function formatSapToMondayColumns(sapSupplier) {
     columnValues[COLUMN_IDS["Nombre SN"]] = sapSupplier.CardName || "";
   }
 
-  // --- Manejo de Fechas ---
-  
   // Creación SAP (Solo Fecha)
   if (COLUMN_IDS["Creación SAP"] && sapSupplier.CreateDate) {
     columnValues[COLUMN_IDS["Creación SAP"]] = {
@@ -179,13 +221,10 @@ function formatSapToMondayColumns(sapSupplier) {
   // Última Actualización SAP (Fecha y Hora)
   if (COLUMN_IDS["Última Actualización SAP"] && sapSupplier.UpdateDate && sapSupplier.UpdateTime != null) {
     try {
-      // SAP envía fecha en UTC (ej. '2025-10-24T00:00:00Z')
       const date = new Date(sapSupplier.UpdateDate);
-      const timeStr = sapSupplier.UpdateTime.toString().padStart(4, '0'); // 1432 -> '1432'
-      const hours = timeStr.substring(0, 2); // '14'
-      const minutes = timeStr.substring(2, 4); // '32'
-
-      // Formato para Monday API: 'YYYY-MM-DD HH:MM:SS' (en UTC)
+      const timeStr = sapSupplier.UpdateTime.toString().padStart(4, '0');
+      const hours = timeStr.substring(0, 2);
+      const minutes = timeStr.substring(2, 4);
       const datePart = date.toISOString().split('T')[0];
       const timePart = `${hours}:${minutes}:00`;
 
@@ -202,13 +241,13 @@ function formatSapToMondayColumns(sapSupplier) {
 }
 
 /**
- * Crea un nuevo item en Monday (versión corregida).
+ * Crea un nuevo item en Monday.
  */
-async function createMondayItem(itemName, columnValues, groupId) { // <-- 1. Acepta groupId
+async function createMondayItem(itemName, columnValues, groupId) {
   const query = `mutation($boardId: ID!, $itemName: String!, $columnValues: JSON!, $groupId: String!) {
     create_item (
       board_id: $boardId,
-      group_id: $groupId, // <-- 2. Añade a la mutación
+      group_id: $groupId,
       item_name: $itemName,
       column_values: $columnValues
     ) {
@@ -220,7 +259,7 @@ async function createMondayItem(itemName, columnValues, groupId) { // <-- 1. Ace
     await monday.api(query, {
       variables: {
         boardId: MONDAY_BOARD_ID,
-        groupId: groupId, // <-- 3. Pasa la variable
+        groupId: groupId,
         itemName: itemName,
         columnValues: JSON.stringify(columnValues)
       }
@@ -262,7 +301,7 @@ async function updateMondayItem(itemId, itemName, columnValues) {
 /**
  * Crea items en Monday en lotes de 100 (versión corregida).
  */
-async function batchCreateMondayItems(suppliers, groupId) { // <-- 1. Acepta groupId
+async function batchCreateMondayItems(suppliers, groupId) {
   console.log(`Iniciando creación en lote de ${suppliers.length} items en el grupo ${groupId}...`);
   
   const CHUNK_SIZE = 100;
@@ -273,11 +312,12 @@ async function batchCreateMondayItems(suppliers, groupId) { // <-- 1. Acepta gro
     
     const itemsToCreate = batch.map(supplier => {
       const columnValues = formatSapToMondayColumns(supplier);
+      // El 'name' (Elemento) se asigna aquí
       const itemName = supplier.CardName || supplier.CardCode;
       return { name: itemName, column_values: columnValues };
     });
 
-    // <-- 2. Mutación actualizada con group_id
+    // Versión corregida con 'ItemCreateInput!'
     const query = `mutation($boardId: ID!, $groupId: String!, $itemsToCreate: [ItemCreateInput!]!) {
       create_multiple_items (
         board_id: $boardId,
@@ -294,23 +334,19 @@ async function batchCreateMondayItems(suppliers, groupId) { // <-- 1. Acepta gro
       const response = await monday.api(query, {
         variables: {
           boardId: MONDAY_BOARD_ID,
-          groupId: groupId, // <-- 3. Pasa la variable
+          groupId: groupId,
           itemsToCreate: itemsToCreate
         }
       });
 
-      // --- INICIO DE LOG DE DIAGNÓSTICO ---
-      console.log('Respuesta del lote:', JSON.stringify(response, null, 2));
-
       if (response.errors) {
-         console.error('❌ Error en el lote (GraphQL):', response.errors);
-         return; // Detener
+        console.error('❌ Error en el lote (GraphQL):', JSON.stringify(response.errors, null, 2));
+        return;
       }
       if (!response.data || !response.data.create_multiple_items) {
-         console.error('❌ Error, la API no devolvió "create_multiple_items".');
-         return; // Detener
+        console.error('❌ Error, la API no devolvió "create_multiple_items".');
+        return;
       }
-      // --- FIN DE LOG DE DIAGNÓSTICO ---
       
       const itemsEnEsteLote = response.data.create_multiple_items.length;
       console.log(`Lote exitoso. Items creados en este lote: ${itemsEnEsteLote}`);
@@ -329,51 +365,12 @@ async function batchCreateMondayItems(suppliers, groupId) { // <-- 1. Acepta gro
   console.log(`✅ Creación en lote finalizada. ${totalItemsCreados} items creados (según la API).`);
 }
 
-/**
- * Busca el ID de un grupo específico dentro de un tablero por su nombre.
- */
-async function getGroupId(boardId, groupName) {
-  console.log(`Buscando ID del grupo "${groupName}"...`);
-  const query = `query($boardId: ID!) {
-    boards(ids: [$boardId]) {
-      groups {
-        id
-        title
-      }
-    }
-  }`;
-  try {
-    const response = await monday.api(query, { variables: { boardId: parseInt(boardId) } });
-    if (response.errors) {
-      console.error("Error de API al buscar grupos:", response.errors);
-      return null;
-    }
-    const groups = response.data.boards[0].groups;
-    const group = groups.find(g => g.title.trim().toLowerCase() === groupName.trim().toLowerCase());
-    
-    if (group) {
-      console.log(`Grupo encontrado. ID: ${group.id}`);
-      return group.id;
-    } else {
-      console.error(`❌ No se encontró el grupo "${groupName}".`);
-      console.log("Grupos disponibles:", groups.map(g => g.title));
-      return null;
-    }
-  } catch (err) {
-    console.error("Error al buscar grupos:", err.message);
-    return null;
-  }
-}
 
-
-// --- FUNCIÓN PRINCIPAL (MODIFICADA) ---
 // --- FUNCIÓN PRINCIPAL ---
 async function main() {
   console.log('Iniciando script de sincronización SAP -> Monday...');
   
-  // ⚠️ IMPORTANTE: Define el nombre exacto de tu grupo
-  const MONDAY_GROUP_NAME = "Información SAP (3)";
-  
+  const MONDAY_GROUP_NAME = "Información SAP (3)"; // ⚠️ VERIFICA ESTE NOMBRE
   let axiosInstance = null;
 
   try {
@@ -384,13 +381,11 @@ async function main() {
       return;
     }
     
-    // --- NUEVO: Obtener el ID del Grupo ---
     const groupId = await getGroupId(MONDAY_BOARD_ID, MONDAY_GROUP_NAME);
     if (!groupId) {
       console.error(`No se pudo encontrar el grupo "${MONDAY_GROUP_NAME}". Abortando.`);
-      return; // El 'finally' se encargará de cerrar la sesión
+      return;
     }
-    // --- FIN DE NUEVO BLOQUE ---
 
     const lastSyncTimestamp = await getLatestSyncTimestamp();
     let sapFilter = null;
@@ -415,7 +410,6 @@ async function main() {
 
     if (isFullSync) {
       console.log("Ejecutando lógica de Sincronización Completa (Lote)...");
-      // 👇 Pasar el groupId
       await batchCreateMondayItems(suppliers, groupId); 
 
     } else {
@@ -430,13 +424,11 @@ async function main() {
         const columnValues = formatSapToMondayColumns(supplier);
         const itemName = supplier.CardName || supplier.CardCode; 
         
-        // Usar la versión corregida de findMondayItem (findMondayItemByRUC_fixed) si la tienes
         const existingItem = await findMondayItemByRUC_fixed(supplier.FederalTaxID); 
 
         if (existingItem) {
           await updateMondayItem(existingItem.id, itemName, columnValues);
         } else {
-          // 👇 Pasar el groupId
           await createMondayItem(itemName, columnValues, groupId);
         }
       }

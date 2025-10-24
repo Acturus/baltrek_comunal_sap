@@ -13,6 +13,6 @@
     "axios": "1.12.2",
     "dotenv": "17.2.3",
     "express": "4.21.2",
-    "monday-sdk-js": "^0.5.6"
+    "@mondaydotcomorg/api": "^11.0.1"
   }
 }
