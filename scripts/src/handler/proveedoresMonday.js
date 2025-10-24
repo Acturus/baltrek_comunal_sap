@@ -1,11 +1,10 @@
 // sync.js (Versión corregida FINAL)
-
 import 'dotenv/config';
 
 // Importa el módulo CJS 'default'
 import mondaySdk from '@mondaydotcomorg/api';
-// Extrae la clase 'ApiClient' de él
-const { ApiClient } = mondaySdk;
+// Extrae las clases 'ApiClient' y 'ClientError'
+const { ApiClient, ClientError } = mondaySdk;
 
 // Importa las funciones de DATOS de SAP
 import { getAllSupplierData, createDeltaFilter } from '../services/supplierService.js';
@@ -28,7 +27,7 @@ const COLUMN_IDS = {
 // --- FIN DE CONFIGURACIÓN ---
 
 
-// Instanciamos la clase 'ApiClient' como dice la documentación
+// Instanciamos la clase 'ApiClient'
 const monday = new ApiClient({ 
   token: process.env.MONDAY_API_KEY,
   apiVersion: "2024-01" 
@@ -42,9 +41,6 @@ const monday = new ApiClient({
 /**
  * Busca el ID de un grupo específico.
  */
-/**
- * Busca el ID de un grupo específico. (Con logs de diagnóstico)
- */
 async function getGroupId(boardId, groupName) {
   console.log(`Buscando ID del grupo "${groupName}"...`);
   const query = `query($boardId: ID!) {
@@ -55,25 +51,10 @@ async function getGroupId(boardId, groupName) {
       }
     }
   }`;
-  
-  let response; // La declaramos aquí para que sea accesible en el catch
-
   try {
-    response = await monday.request(query, { boardId: parseInt(boardId) });
-
-    // --- INICIO DE LOG DE DIAGNÓSTICO ---
-    console.log("==================== RESPUESTA DE MONDAY (getGroupId) ====================");
-    console.log(JSON.stringify(response, null, 2));
-    console.log("==========================================================================");
-    // --- FIN DE LOG ---
-
-    if (response.errors) {
-       console.error("Error de API al buscar grupos:", response.errors);
-       return null;
-    }
-
-    // Esta es la línea que está fallando (significa que response.data es undefined)
-    const groups = response.data.boards[0].groups;
+    // 👇 CORRECCIÓN: Se quitó el .data
+    const response = await monday.request(query, { boardId: parseInt(boardId) });
+    const groups = response.boards[0].groups;
     const group = groups.find(g => g.title.trim().toLowerCase() === groupName.trim().toLowerCase());
     
     if (group) {
@@ -85,15 +66,12 @@ async function getGroupId(boardId, groupName) {
       return null;
     }
   } catch (err) {
-    // El TypeError (Cannot read properties) caerá aquí
-    console.error(`Error de RED/SDK al buscar grupos: ${err.message}`, err);
-
-    // --- LOG ADICIONAL EN CASO DE ERROR ---
-    // Imprime el objeto 'response' que causó el fallo
-    console.error("La respuesta (response) que causó el error fue:");
-    console.error(JSON.stringify(response, null, 2));
-    // --- FIN DE LOG ADICIONAL ---
-    
+    // 👇 CORRECCIÓN: Manejo de ClientError
+    if (err instanceof ClientError) {
+      console.error("Error de API al buscar grupos:", JSON.stringify(err.response.errors, null, 2));
+    } else {
+      console.error(`Error de RED/SDK al buscar grupos: ${err.message}`, err);
+    }
     return null;
   }
 }
@@ -131,23 +109,14 @@ async function getLatestSyncTimestamp() {
   }`;
 
   try {
-    // 👇 CORRECCIÓN: Se quitó el wrapper { variables: ... }
+    // 👇 CORRECCIÓN: Se quitó el .data
     const response = await monday.request(query, {
       boardId: MONDAY_BOARD_ID,
       columnIdString: dateColumnId,
       columnIdID: dateColumnId
     });
-
-    if (response.errors) {
-      console.error("Error de API al buscar última fecha:", JSON.stringify(response.errors, null, 2));
-      return null;
-    }
-    if (!response.data || !response.data.boards) {
-      console.error("Error: La respuesta de la API no contiene 'data' o 'boards'.", response);
-      return null;
-    }
     
-    const items = response.data.boards[0].items_page.items;
+    const items = response.boards[0].items_page.items;
 
     if (items.length > 0 && items[0].column_values[0].value) {
       const lastDate = items[0].column_values[0].text;
@@ -158,7 +127,12 @@ async function getLatestSyncTimestamp() {
       return null; // Primera sincronización
     }
   } catch (err) {
-    console.error("Error de RED/SDK al obtener la última fecha de sincronización:", err.message);
+    // 👇 CORRECCIÓN: Manejo de ClientError
+    if (err instanceof ClientError) {
+      console.error("Error de API al buscar última fecha:", JSON.stringify(err.response.errors, null, 2));
+    } else {
+      console.error("Error de RED/SDK al obtener la última fecha de sincronización:", err.message);
+    }
     return null;
   }
 }
@@ -184,27 +158,23 @@ async function findMondayItemByRUC_fixed(rucValue) {
   }`;
 
   try {
-    // 👇 CORRECCIÓN: Se quitó el wrapper { variables: ... }
+    // 👇 CORRECCIÓN: Se quitó el .data
     const response = await monday.request(query, {
       boardId: MONDAY_BOARD_ID,
       columnId: rucColumnId,
       columnValue: String(rucValue) 
     });
 
-    if (response.errors) {
-      console.error(`❌ Error de API al buscar RUC ${rucValue}:`, JSON.stringify(response.errors, null, 2));
-      return null;
-    }
-    if (!response.data) {
-       console.error(`❌ Error inesperado (sin 'data') al buscar RUC ${rucValue}.`, response);
-       return null;
-    }
-
-    const items = response.data.items_page_by_column_values.items;
+    const items = response.items_page_by_column_values.items;
     return items.length > 0 ? items[0] : null;
 
   } catch (err) {
-    console.error(`❌ Error de RED/SDK buscando item con RUC ${rucValue}:`, err.message);
+    // 👇 CORRECCIÓN: Manejo de ClientError
+    if (err instanceof ClientError) {
+      console.error(`❌ Error de API al buscar RUC ${rucValue}:`, JSON.stringify(err.response.errors, null, 2));
+    } else {
+      console.error(`❌ Error de RED/SDK buscando item con RUC ${rucValue}:`, err.message);
+    }
     return null;
   }
 }
@@ -274,7 +244,6 @@ async function createMondayItem(itemName, columnValues, groupId) {
   }`;
 
   try {
-    // 👇 CORRECCIÓN: Se quitó el wrapper { variables: ... }
     await monday.request(query, {
       boardId: MONDAY_BOARD_ID,
       groupId: groupId,
@@ -283,7 +252,12 @@ async function createMondayItem(itemName, columnValues, groupId) {
     });
     console.log(`✅ CREADO: ${itemName}`);
   } catch (err) {
-    console.error(`❌ ERROR al crear ${itemName}:`, err.message);
+    // 👇 CORRECCIÓN: Manejo de ClientError
+    if (err instanceof ClientError) {
+      console.error(`❌ ERROR GraphQL al crear ${itemName}:`, JSON.stringify(err.response.errors, null, 2));
+    } else {
+      console.error(`❌ ERROR de RED/SDK al crear ${itemName}:`, err.message);
+    }
   }
 }
 
@@ -302,7 +276,6 @@ async function updateMondayItem(itemId, itemName, columnValues) {
   }`;
 
   try {
-    // 👇 CORRECCIÓN: Se quitó el wrapper { variables: ... }
     await monday.request(query, {
       itemId: parseInt(itemId),
       boardId: MONDAY_BOARD_ID,
@@ -310,7 +283,12 @@ async function updateMondayItem(itemId, itemName, columnValues) {
     });
     console.log(`🔄 ACTUALIZADO: ${itemName} (ID: ${itemId})`);
   } catch (err) {
-    console.error(`❌ ERROR al actualizar ${itemName}:`, err.message);
+    // 👇 CORRECCIÓN: Manejo de ClientError
+    if (err instanceof ClientError) {
+      console.error(`❌ ERROR GraphQL al actualizar ${itemName}:`, JSON.stringify(err.response.errors, null, 2));
+    } else {
+      console.error(`❌ ERROR de RED/SDK al actualizar ${itemName}:`, err.message);
+    }
   }
 }
 
@@ -345,30 +323,28 @@ async function batchCreateMondayItems(suppliers, groupId) {
     try {
       console.log(`Enviando lote ${Math.floor(i / CHUNK_SIZE) + 1}/${Math.ceil(suppliers.length / CHUNK_SIZE)}...`);
       
-      // 👇 CORRECCIÓN: Se quitó el wrapper { variables: ... }
+      // 👇 CORRECCIÓN: Se quitó el .data
       const response = await monday.request(query, {
         boardId: MONDAY_BOARD_ID,
         groupId: groupId,
         itemsToCreate: itemsToCreate
       });
-
-      if (response.errors) {
-         console.error('❌ Error en el lote (GraphQL):', JSON.stringify(response.errors, null, 2));
-         return;
-      }
-      if (!response.data || !response.data.create_multiple_items) {
+      
+      if (!response || !response.create_multiple_items) {
          console.error('❌ Error, la API no devolvió "create_multiple_items".');
          return;
       }
       
-      const itemsEnEsteLote = response.data.create_multiple_items.length;
+      const itemsEnEsteLote = response.create_multiple_items.length;
       console.log(`Lote exitoso. Items creados en este lote: ${itemsEnEsteLote}`);
       totalItemsCreados += itemsEnEsteLote;
 
     } catch (err) {
-      console.error(`❌ ERROR al crear lote:`, err.message);
-      if (err.response && err.response.data) {
-         console.error("Detalle del error:", JSON.stringify(err.response.data, null, 2));
+      // 👇 CORRECCIÓN: Manejo de ClientError
+      if (err instanceof ClientError) {
+        console.error('❌ Error en el lote (GraphQL):', JSON.stringify(err.response.errors, null, 2));
+      } else {
+        console.error(`❌ ERROR de RED/SDK al crear lote:`, err.message);
       }
       console.log("Se detiene la creación en lote para evitar más errores.");
       return;
