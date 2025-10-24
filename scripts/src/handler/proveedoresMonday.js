@@ -61,6 +61,13 @@ async function getLatestSyncTimestamp() {
       variables: { boardId: MONDAY_BOARD_ID, columnId: dateColumnId }
     });
 
+    // ================================================================
+    // AÑADE ESTAS LÍNEAS AQUÍ PARA VER LA RESPUESTA
+    console.log("==================== RESPUESTA DE MONDAY (RAW) ====================");
+    console.log(JSON.stringify(response, null, 2));
+    console.log("===================================================================");
+    // ================================================================
+
     const items = response.data.boards[0].items_page.items;
 
     if (items.length > 0 && items[0].column_values[0].value) {
