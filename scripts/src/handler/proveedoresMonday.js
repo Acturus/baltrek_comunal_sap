@@ -6,7 +6,6 @@ import { getAllSupplierData, createDeltaFilter } from '../services/supplierServi
 // Importa las funciones de SESIÓN de SAP
 import { getSapSession, sapLogout } from '../config/sap.js';
 
-const { mondayApiClient } = mondaySdk;
 // --- CONFIGURACIÓN REQUERIDA (¡COMPLETADA!) ---
 const MONDAY_BOARD_ID = 18213048823;
 
@@ -24,7 +23,7 @@ const COLUMN_IDS = {
 
 
 // Inicializamos el nuevo cliente (usando la API 2024-01)
-const monday = mondayApiClient({ 
+const monday = mondaySdk({ 
   token: process.env.MONDAY_API_KEY,
   apiVersion: "2024-01" 
 });
