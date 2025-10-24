@@ -189,12 +189,13 @@ function formatSapToMondayColumns(sapSupplier) {
 }
 
 /**
- * Crea un nuevo item en Monday.
+ * Crea un nuevo item en Monday (versión corregida).
  */
-async function createMondayItem(itemName, columnValues) {
-  const query = `mutation($boardId: ID!, $itemName: String!, $columnValues: JSON!) {
+async function createMondayItem(itemName, columnValues, groupId) { // <-- 1. Acepta groupId
+  const query = `mutation($boardId: ID!, $itemName: String!, $columnValues: JSON!, $groupId: String!) {
     create_item (
       board_id: $boardId,
+      group_id: $groupId, // <-- 2. Añade a la mutación
       item_name: $itemName,
       column_values: $columnValues
     ) {
@@ -206,7 +207,8 @@ async function createMondayItem(itemName, columnValues) {
     await monday.api(query, {
       variables: {
         boardId: MONDAY_BOARD_ID,
-        itemName: itemName, // Usamos CardName como el nombre del elemento
+        groupId: groupId, // <-- 3. Pasa la variable
+        itemName: itemName,
         columnValues: JSON.stringify(columnValues)
       }
     });
@@ -245,34 +247,28 @@ async function updateMondayItem(itemId, itemName, columnValues) {
 }
 
 /**
- * Crea items en Monday en lotes de 100.
- * @param {Array<object>} suppliers - Lista de proveedores de SAP.
+ * Crea items en Monday en lotes de 100 (versión corregida).
  */
-async function batchCreateMondayItems(suppliers) {
-  console.log(`Iniciando creación en lote de ${suppliers.length} items...`);
+async function batchCreateMondayItems(suppliers, groupId) { // <-- 1. Acepta groupId
+  console.log(`Iniciando creación en lote de ${suppliers.length} items en el grupo ${groupId}...`);
   
-  // Dividir el array de proveedores en lotes (chunks) de 100
-  const CHUNK_SIZE = 100; // Límite seguro para la API de Monday
-  let itemsCreated = 0;
+  const CHUNK_SIZE = 100;
+  let totalItemsCreados = 0;
 
   for (let i = 0; i < suppliers.length; i += CHUNK_SIZE) {
     const batch = suppliers.slice(i, i + CHUNK_SIZE);
     
-    // Convertir cada proveedor del lote al formato de Monday
     const itemsToCreate = batch.map(supplier => {
       const columnValues = formatSapToMondayColumns(supplier);
       const itemName = supplier.CardName || supplier.CardCode;
-      return {
-        name: itemName,
-        column_values: columnValues
-      };
+      return { name: itemName, column_values: columnValues };
     });
 
-    // Construir la mutación de GraphQL
-    // Usamos 'items_to_create' como variable tipo JSON
-    const query = `mutation($boardId: ID!, $itemsToCreate: [ItemCreateDetails!]!) {
+    // <-- 2. Mutación actualizada con group_id
+    const query = `mutation($boardId: ID!, $groupId: String!, $itemsToCreate: [ItemCreateDetails!]!) {
       create_multiple_items (
         board_id: $boardId,
+        group_id: $groupId,
         items: $itemsToCreate
       ) {
         id
@@ -280,16 +276,32 @@ async function batchCreateMondayItems(suppliers) {
     }`;
 
     try {
-      console.log(`Enviando lote ${Math.floor(i / CHUNK_SIZE) + 1}/${Math.ceil(suppliers.length / CHUNK_SIZE)} (Items: ${itemsToCreate.length})...`);
+      console.log(`Enviando lote ${Math.floor(i / CHUNK_SIZE) + 1}/${Math.ceil(suppliers.length / CHUNK_SIZE)}...`);
       
-      await monday.api(query, {
+      const response = await monday.api(query, {
         variables: {
           boardId: MONDAY_BOARD_ID,
+          groupId: groupId, // <-- 3. Pasa la variable
           itemsToCreate: itemsToCreate
         }
       });
+
+      // --- INICIO DE LOG DE DIAGNÓSTICO ---
+      console.log('Respuesta del lote:', JSON.stringify(response, null, 2));
+
+      if (response.errors) {
+         console.error('❌ Error en el lote (GraphQL):', response.errors);
+         return; // Detener
+      }
+      if (!response.data || !response.data.create_multiple_items) {
+         console.error('❌ Error, la API no devolvió "create_multiple_items".');
+         return; // Detener
+      }
+      // --- FIN DE LOG DE DIAGNÓSTICO ---
       
-      itemsCreated += batch.length;
+      const itemsEnEsteLote = response.data.create_multiple_items.length;
+      console.log(`Lote exitoso. Items creados en este lote: ${itemsEnEsteLote}`);
+      totalItemsCreados += itemsEnEsteLote;
 
     } catch (err) {
       console.error(`❌ ERROR al crear lote:`, err.message);
@@ -297,17 +309,57 @@ async function batchCreateMondayItems(suppliers) {
         console.error("Detalle del error:", JSON.stringify(err.response.data, null, 2));
       }
       console.log("Se detiene la creación en lote para evitar más errores.");
-      return; // Detener si un lote falla
+      return;
     }
   }
 
-  console.log(`✅ Creación en lote finalizada. ${itemsCreated} items creados.`);
+  console.log(`✅ Creación en lote finalizada. ${totalItemsCreados} items creados (según la API).`);
+}
+
+/**
+ * Busca el ID de un grupo específico dentro de un tablero por su nombre.
+ */
+async function getGroupId(boardId, groupName) {
+  console.log(`Buscando ID del grupo "${groupName}"...`);
+  const query = `query($boardId: ID!) {
+    boards(ids: [$boardId]) {
+      groups {
+        id
+        title
+      }
+    }
+  }`;
+  try {
+    const response = await monday.api(query, { variables: { boardId: parseInt(boardId) } });
+    if (response.errors) {
+      console.error("Error de API al buscar grupos:", response.errors);
+      return null;
+    }
+    const groups = response.data.boards[0].groups;
+    const group = groups.find(g => g.title.trim().toLowerCase() === groupName.trim().toLowerCase());
+    
+    if (group) {
+      console.log(`Grupo encontrado. ID: ${group.id}`);
+      return group.id;
+    } else {
+      console.error(`❌ No se encontró el grupo "${groupName}".`);
+      console.log("Grupos disponibles:", groups.map(g => g.title));
+      return null;
+    }
+  } catch (err) {
+    console.error("Error al buscar grupos:", err.message);
+    return null;
+  }
 }
 
 
 // --- FUNCIÓN PRINCIPAL (MODIFICADA) ---
+// --- FUNCIÓN PRINCIPAL ---
 async function main() {
   console.log('Iniciando script de sincronización SAP -> Monday...');
+  
+  // ⚠️ IMPORTANTE: Define el nombre exacto de tu grupo
+  const MONDAY_GROUP_NAME = "Información SAP (3)";
   
   let axiosInstance = null;
 
@@ -318,50 +370,44 @@ async function main() {
       console.error("No se pudo iniciar sesión en SAP Service Layer. Abortando.");
       return;
     }
+    
+    // --- NUEVO: Obtener el ID del Grupo ---
+    const groupId = await getGroupId(MONDAY_BOARD_ID, MONDAY_GROUP_NAME);
+    if (!groupId) {
+      console.error(`No se pudo encontrar el grupo "${MONDAY_GROUP_NAME}". Abortando.`);
+      return; // El 'finally' se encargará de cerrar la sesión
+    }
+    // --- FIN DE NUEVO BLOQUE ---
 
-    // 2. Determinar si es sincronización completa o delta
     const lastSyncTimestamp = await getLatestSyncTimestamp();
     let sapFilter = null;
-    let isFullSync = false; // <-- Nueva variable
+    let isFullSync = false;
 
     if (lastSyncTimestamp) {
       console.log(`Modo Delta: Buscando cambios desde ${lastSyncTimestamp}`);
       sapFilter = createDeltaFilter(lastSyncTimestamp);
     } else {
       console.log("Modo Completo: Obteniendo todos los proveedores.");
-      isFullSync = true; // <-- Marcar como Sincronización Completa
+      isFullSync = true;
     }
 
-    // 3. Obtener datos de SAP
     const suppliers = await getAllSupplierData(axiosInstance, sapFilter);
 
-    if (!suppliers) {
-      console.error("Falló la obtención de datos de SAP. Abortando.");
-      return;
-    }
-    
-    if (suppliers.length === 0) {
+    if (!suppliers || suppliers.length === 0) {
       console.log("No se encontraron proveedores nuevos o actualizados en SAP. Sincronización finalizada.");
       return;
     }
 
     console.log(`Procesando ${suppliers.length} registros de SAP...`);
 
-    // --- INICIO DE LÓGICA DE SINCRONIZACIÓN ---
-    
     if (isFullSync) {
-      // **** MODO COMPLETO: Usar creación en lote ****
-      // Asume que el tablero está vacío y simplemente crea todo.
-      await batchCreateMondayItems(suppliers);
+      console.log("Ejecutando lógica de Sincronización Completa (Lote)...");
+      // 👇 Pasar el groupId
+      await batchCreateMondayItems(suppliers, groupId); 
 
     } else {
-      // **** MODO DELTA: Usar lógica de 1 en 1 (Upsert) ****
-      // (Este es el código que ya tenías, es correcto para pocos registros)
-      
-      // *** Nota: Recomiendo reemplazar tu 'findMondayItemByRUC' ***
-      // *** por la versión corregida de abajo para mejores logs de error ***
-      
       console.log("Ejecutando lógica Delta (buscar y actualizar)...");
+      
       for (const supplier of suppliers) {
         if (!supplier.FederalTaxID) {
           console.warn(`Saltando proveedor ${supplier.CardCode} por no tener RUC (FederalTaxID).`);
@@ -371,18 +417,17 @@ async function main() {
         const columnValues = formatSapToMondayColumns(supplier);
         const itemName = supplier.CardName || supplier.CardCode; 
         
-        // ** (Opcional pero recomendado) Reemplaza tu 'findMondayItemByRUC' **
-        // ** por la versión del Paso 3 para mejores logs de error **
-        const existingItem = await findMondayItemByRUC_fixed(supplier.FederalTaxID);
+        // Usar la versión corregida de findMondayItem (findMondayItemByRUC_fixed) si la tienes
+        const existingItem = await findMondayItemByRUC_fixed(supplier.FederalTaxID); 
 
         if (existingItem) {
           await updateMondayItem(existingItem.id, itemName, columnValues);
         } else {
-          await createMondayItem(itemName, columnValues);
+          // 👇 Pasar el groupId
+          await createMondayItem(itemName, columnValues, groupId);
         }
       }
     }
-    // --- FIN DE LÓGICA DE SINCRONIZACIÓN ---
 
     console.log("🎉 Sincronización completada.");
 
