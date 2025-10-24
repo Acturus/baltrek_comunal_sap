@@ -5,7 +5,7 @@ import mondaySdk from 'monday-sdk-js';
 // Importa las funciones de DATOS de SAP (de mi sugerencia anterior)
 import { getAllSupplierData, createDeltaFilter } from '../services/supplierService.js'; 
 // Importa las funciones de SESIÓN de SAP (de tu archivo)
-import { getSapSession, sapLogout } from './sap.js';
+import { getSapSession, sapLogout } from '../config/sap.js';
 
 // --- CONFIGURACIÓN REQUERIDA ---
 // Pega aquí los IDs que obtuviste del script 'find_ids.js'
