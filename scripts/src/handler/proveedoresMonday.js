@@ -146,7 +146,7 @@ async function findMondayItemByRUC_fixed(rucValue) {
   // 👇 CORRECCIÓN: Usando 'items_by_column_values'
   // Esta es la sintaxis de la API antigua que tu cuenta parece estar usando.
   const query = `query($boardId: ID!, $columnId: String!, $columnValue: String!) {
-    items_by_column_values (
+    items_page_by_column_values (
       board_id: $boardId,
       column_id: $columnId,
       column_value: $columnValue,
