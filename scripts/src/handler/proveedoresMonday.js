@@ -142,17 +142,25 @@ async function getLatestSyncTimestamp() {
 }
 
 /**
- * Busca un item en Monday usando el valor de la columna RUC (versión robusta).
+ * Busca un item en Monday usando el valor de la columna RUC (versión corregida para API 2024-01).
  */
 async function findMondayItemByRUC_fixed(rucValue) {
   const rucColumnId = COLUMN_IDS["RUC"];
   
+  // 👇 CORRECCIÓN: Esta es la nueva consulta de búsqueda
   const query = `query($boardId: ID!, $columnId: String!, $columnValue: String!) {
-    items_page_by_column_values(
+    items_page (
       board_id: $boardId,
-      column_id: $columnId,
-      column_value: $columnValue,
-      limit: 1
+      limit: 1,
+      query_params: {
+        rules: [
+          {
+            column_id: $columnId,
+            compare_value: [$columnValue],
+            operator: eq
+          }
+        ]
+      }
     ) {
       items {
         id
@@ -162,18 +170,17 @@ async function findMondayItemByRUC_fixed(rucValue) {
   }`;
 
   try {
-    // 👇 CORRECCIÓN: Se quitó el .data
     const response = await monday.request(query, {
       boardId: MONDAY_BOARD_ID,
       columnId: rucColumnId,
       columnValue: String(rucValue) 
     });
 
-    const items = response.items_page_by_column_values.items;
+    // 👇 CORRECCIÓN: La respuesta ahora está en 'response.items_page.items'
+    const items = response.items_page.items;
     return items.length > 0 ? items[0] : null;
 
   } catch (err) {
-    // 👇 CORRECCIÓN: Manejo de ClientError
     if (err instanceof ClientError) {
       console.error(`❌ Error de API al buscar RUC ${rucValue}:`, JSON.stringify(err.response.errors, null, 2));
     } else {
@@ -211,14 +218,23 @@ function formatSapToMondayColumns(sapSupplier) {
     };
   }
 
+  // Última Actualización SAP (Fecha y Hora)
   if (COLUMN_IDS["Última Actualización SAP"] && sapSupplier.UpdateDate && sapSupplier.UpdateTime != null) {
     try {
       const date = new Date(sapSupplier.UpdateDate);
-      const timeStr = sapSupplier.UpdateTime.toString().padStart(4, '0');
+
+      // --- INICIO DE CORRECCIÓN PARA HORA ---
+      // 1. Convertir a string y quitar cualquier ':' existente (ej. '12:3' -> '123')
+      let timeStr = sapSupplier.UpdateTime.toString().replace(/:/g, '');
+      // 2. Rellenar con ceros a la izquierda (ej. '123' -> '0123')
+      timeStr = timeStr.padStart(4, '0');
+      // 3. Extraer horas y minutos (ej. '0123' -> '01' y '23')
       const hours = timeStr.substring(0, 2);
       const minutes = timeStr.substring(2, 4);
+      // --- FIN DE CORRECCIÓN ---
+
       const datePart = date.toISOString().split('T')[0];
-      const timePart = `${hours}:${minutes}:00`;
+      const timePart = `${hours}:${minutes}:00`; // (ej. '01:23:00')
 
       columnValues[COLUMN_IDS["Última Actualización SAP"]] = {
         "date": datePart,
