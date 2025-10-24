@@ -389,7 +389,7 @@ async function main() {
       sapFilter = createDeltaFilter(lastSyncTimestamp);
     } else {
       console.log("Modo Completo: Obteniendo todos los proveedores.");
-      isFullSync = true;
+      //isFullSync = true;
     }
 
     const suppliers = await getAllSupplierData(axiosInstance, sapFilter);
