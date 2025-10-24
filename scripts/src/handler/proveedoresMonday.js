@@ -1,12 +1,12 @@
 import 'dotenv/config';
 // Importamos el nuevo cliente
-import { mondayApiClient } from '@mondaydotcomorg/api';
-
+import mondaySdk from '@mondaydotcomorg/api';
 // Importa las funciones de DATOS de SAP
 import { getAllSupplierData, createDeltaFilter } from '../services/supplierService.js';
 // Importa las funciones de SESIÓN de SAP
 import { getSapSession, sapLogout } from '../config/sap.js';
 
+const { mondayApiClient } = mondaySdk;
 // --- CONFIGURACIÓN REQUERIDA (¡COMPLETADA!) ---
 const MONDAY_BOARD_ID = 18213048823;
 
