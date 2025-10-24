@@ -37,21 +37,17 @@ async function getLatestSyncTimestamp() {
 
   console.log(`Buscando última fecha de sincronización en Monday (Columna: ${dateColumnId})...`);
 
-  // --- INICIO DE LA CORRECCIÓN ---
-  // Definimos DOS variables: $columnIdString (String!) y $columnIdID (ID!)
+  // --- INICIO DE LA CORRECCIÓN (Versión limpia sin comentarios) ---
   const query = `query($boardId: ID!, $columnIdString: String!, $columnIdID: ID!) {
     boards(ids: [$boardId]) {
       items_page(
         limit: 1,
         query_params: {
-          // order_by usa la variable String!
           order_by: [{column_id: $columnIdString, direction: desc}],
-          // rules usa la variable ID!
           rules: [{column_id: $columnIdID, compare_value: [""] , operator: not_is_empty}]
         }
       ) {
         items {
-          // column_values(ids: ...) usa la variable String!
           column_values(ids: [$columnIdString]) {
             value
             text
@@ -66,16 +62,10 @@ async function getLatestSyncTimestamp() {
     const response = await monday.api(query, {
       variables: {
         boardId: MONDAY_BOARD_ID,
-        // Pasamos el mismo ID a ambas variables
         columnIdString: dateColumnId,
         columnIdID: dateColumnId
       }
     });
-
-    // (Ya no necesitamos el log RAW, lo quito)
-    // console.log("==================== RESPUESTA DE MONDAY (RAW) ====================");
-    // console.log(JSON.stringify(response, null, 2));
-    // console.log("===================================================================");
 
     if (response.errors) {
       console.error("Error de API al buscar última fecha:", JSON.stringify(response.errors, null, 2));
@@ -105,10 +95,6 @@ async function getLatestSyncTimestamp() {
 /**
  * Busca un item en Monday usando el valor de la columna RUC.
  * @returns {object | null} El item de Monday (con id) o null si no se encuentra.
- */
-/**
- * (RECOMENDADO) Busca un item en Monday usando el valor de la columna RUC.
- * Esta versión maneja los errores de la API de forma más robusta.
  */
 async function findMondayItemByRUC_fixed(rucValue) {
   const rucColumnId = COLUMN_IDS["RUC"];
