@@ -37,7 +37,8 @@ async function getLatestSyncTimestamp() {
 
   console.log(`Buscando última fecha de sincronización en Monday (Columna: ${dateColumnId})...`);
 
-  const query = `query($boardId: ID!, $columnId: String!) {
+  // 👇 LA CORRECCIÓN ESTÁ EN ESTA LÍNEA: $columnId: String! -> $columnId: ID!
+  const query = `query($boardId: ID!, $columnId: ID!) {
     boards(ids: [$boardId]) {
       items_page(
         limit: 1,
@@ -61,27 +62,34 @@ async function getLatestSyncTimestamp() {
       variables: { boardId: MONDAY_BOARD_ID, columnId: dateColumnId }
     });
 
-    // ================================================================
-    // AÑADE ESTAS LÍNEAS AQUÍ PARA VER LA RESPUESTA
     console.log("==================== RESPUESTA DE MONDAY (RAW) ====================");
     console.log(JSON.stringify(response, null, 2));
     console.log("===================================================================");
-    // ================================================================
+
+    // --- VERIFICACIÓN MEJORADA ---
+    if (response.errors) {
+      console.error("Error de API al buscar última fecha:", JSON.stringify(response.errors, null, 2));
+      return null;
+    }
+    if (!response.data || !response.data.boards) {
+      console.error("Error: La respuesta de la API no contiene 'data' o 'boards'.", response);
+      return null;
+    }
+    // --- FIN DE VERIFICACIÓN ---
 
     const items = response.data.boards[0].items_page.items;
 
     if (items.length > 0 && items[0].column_values[0].value) {
       const lastDate = items[0].column_values[0].text;
       console.log(`Última sincronización detectada: ${lastDate}`);
-      // Asume que la fecha de Monday está en formato 'YYYY-MM-DD HH:mm:ss' (UTC)
       return new Date(lastDate.replace(' ', 'T') + 'Z').toISOString();
     } else {
       console.log("No se encontraron fechas. Se ejecutará la sincronización completa.");
       return null; // Primera sincronización
     }
   } catch (err) {
-    console.error("Error al obtener la última fecha de sincronización:", err.message);
-    return null; // Forzar sincronización completa en caso de error
+    console.error("Error de RED/SDK al obtener la última fecha de sincronización:", err.message);
+    return null;
   }
 }
 
