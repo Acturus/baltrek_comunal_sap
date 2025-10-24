@@ -265,7 +265,7 @@ async function batchCreateMondayItems(suppliers, groupId) { // <-- 1. Acepta gro
     });
 
     // <-- 2. Mutación actualizada con group_id
-    const query = `mutation($boardId: ID!, $groupId: String!, $itemsToCreate: [ItemCreateDetails!]!) {
+    const query = `mutation($boardId: ID!, $groupId: String!, $itemsToCreate: [ItemCreateInput!]!) {
       create_multiple_items (
         board_id: $boardId,
         group_id: $groupId,
