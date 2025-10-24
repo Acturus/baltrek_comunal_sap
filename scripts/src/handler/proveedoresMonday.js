@@ -23,7 +23,10 @@ const COLUMN_IDS = {
   "Última actualización": "pulse_updated_mkx17xqq"
 }
 
-const monday = mondaySdk({ token: process.env.MONDAY_API_KEY });
+const monday = mondaySdk({ 
+    token: process.env.MONDAY_API_KEY,
+    apiVersion: "2023-10"
+});
 
 /**
  * Obtiene el timestamp más reciente de la columna 'Última Actualización SAP'
