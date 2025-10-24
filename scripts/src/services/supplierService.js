@@ -31,9 +31,13 @@ export async function getAllSupplierData(sessionInstance, filter = null) {
 
       // Manejo de paginación
       if (data["odata.nextLink"]) {
-        // odata.nextLink viene como 'BusinessPartners?$skiptoken=20'
-        // Necesitamos agregar el '/' inicial
-        query = `/${data["odata.nextLink"]}`;
+        // data["odata.nextLink"] viene con el path completo, ej: "/b1s/v1/BusinessPartners?$skip=20"
+        // Debemos quitar el prefijo '/b1s/v1' para que sea relativo a nuestra baseURL de Axios.
+        query = data["odata.nextLink"].replace('/b1s/v1', '');
+        
+        // El resultado de replace() será '/BusinessPartners?$skip=20'
+        // ¡Esto es exactamente lo que necesitamos para la siguiente llamada de Axios!
+        
       } else {
         query = null; // No hay más páginas, termina el bucle
       }
