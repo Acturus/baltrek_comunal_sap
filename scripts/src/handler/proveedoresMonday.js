@@ -30,7 +30,11 @@ const COLUMN_IDS = {
 // Instanciamos la clase 'ApiClient'
 const monday = new ApiClient({ 
   token: process.env.MONDAY_API_KEY,
-  apiVersion: "2024-01" 
+  requestConfig: {
+    headers: {
+      'API-Version': '2024-01'
+    }
+  } 
 });
 
 
