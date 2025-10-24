@@ -29,12 +29,7 @@ const COLUMN_IDS = {
 
 // Instanciamos la clase 'ApiClient'
 const monday = new ApiClient({ 
-  token: process.env.MONDAY_API_KEY,
-  requestConfig: {
-    headers: {
-      'API-Version': '2024-01'
-    }
-  } 
+  token: process.env.MONDAY_API_KEY
 });
 
 
@@ -142,30 +137,23 @@ async function getLatestSyncTimestamp() {
 }
 
 /**
- * Busca un item en Monday usando el valor de la columna RUC (versión corregida para API 2024-01).
+ * Busca un item en Monday usando el valor de la columna RUC
+ * 
  */
 async function findMondayItemByRUC_fixed(rucValue) {
   const rucColumnId = COLUMN_IDS["RUC"];
   
-  // 👇 CORRECCIÓN: Esta es la nueva consulta de búsqueda
+  // 👇 CORRECCIÓN: Usando 'items_by_column_values'
+  // Esta es la sintaxis de la API antigua que tu cuenta parece estar usando.
   const query = `query($boardId: ID!, $columnId: String!, $columnValue: String!) {
-    items_page (
+    items_by_column_values (
       board_id: $boardId,
-      limit: 1,
-      query_params: {
-        rules: [
-          {
-            column_id: $columnId,
-            compare_value: [$columnValue],
-            operator: eq
-          }
-        ]
-      }
+      column_id: $columnId,
+      column_value: $columnValue,
+      limit: 1
     ) {
-      items {
-        id
-        name
-      }
+      id
+      name
     }
   }`;
 
@@ -176,8 +164,8 @@ async function findMondayItemByRUC_fixed(rucValue) {
       columnValue: String(rucValue) 
     });
 
-    // 👇 CORRECCIÓN: La respuesta ahora está en 'response.items_page.items'
-    const items = response.items_page.items;
+    // 👇 CORRECCIÓN: La respuesta ahora está en 'response.items_by_column_values'
+    const items = response.items_by_column_values;
     return items.length > 0 ? items[0] : null;
 
   } catch (err) {
@@ -311,69 +299,6 @@ async function updateMondayItem(itemId, itemName, columnValues) {
     }
   }
 }
-
-/**
- * Crea items en Monday en lotes de 100 (versión corregida).
- */
-async function batchCreateMondayItems(suppliers, groupId) {
-  console.log(`Iniciando creación en lote de ${suppliers.length} items en el grupo ${groupId}...`);
-  
-  const CHUNK_SIZE = 100;
-  let totalItemsCreados = 0;
-
-  for (let i = 0; i < suppliers.length; i += CHUNK_SIZE) {
-    const batch = suppliers.slice(i, i + CHUNK_SIZE);
-    
-    const itemsToCreate = batch.map(supplier => {
-      const columnValues = formatSapToMondayColumns(supplier);
-      const itemName = supplier.CardName || supplier.CardCode;
-      return { name: itemName, column_values: columnValues };
-    });
-
-    const query = `mutation($boardId: ID!, $groupId: String!, $itemsToCreate: [ItemCreateInput!]!) {
-      create_multiple_items (
-        board_id: $boardId,
-        group_id: $groupId,
-        items: $itemsToCreate
-      ) {
-        id
-      }
-    }`;
-
-    try {
-      console.log(`Enviando lote ${Math.floor(i / CHUNK_SIZE) + 1}/${Math.ceil(suppliers.length / CHUNK_SIZE)}...`);
-      
-      // 👇 CORRECCIÓN: Se quitó el .data
-      const response = await monday.request(query, {
-        boardId: MONDAY_BOARD_ID,
-        groupId: groupId,
-        itemsToCreate: itemsToCreate
-      });
-      
-      if (!response || !response.create_multiple_items) {
-         console.error('❌ Error, la API no devolvió "create_multiple_items".');
-         return;
-      }
-      
-      const itemsEnEsteLote = response.create_multiple_items.length;
-      console.log(`Lote exitoso. Items creados en este lote: ${itemsEnEsteLote}`);
-      totalItemsCreados += itemsEnEsteLote;
-
-    } catch (err) {
-      // 👇 CORRECCIÓN: Manejo de ClientError
-      if (err instanceof ClientError) {
-        console.error('❌ Error en el lote (GraphQL):', JSON.stringify(err.response.errors, null, 2));
-      } else {
-        console.error(`❌ ERROR de RED/SDK al crear lote:`, err.message);
-      }
-      console.log("Se detiene la creación en lote para evitar más errores.");
-      return;
-    }
-  }
-
-  console.log(`✅ Creación en lote finalizada. ${totalItemsCreados} items creados (según la API).`);
-}
-
 
 // --- FUNCIÓN PRINCIPAL (Sin cambios en la lógica) ---
 async function main() {
