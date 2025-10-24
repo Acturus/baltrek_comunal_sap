@@ -44,7 +44,7 @@ async function getLatestSyncTimestamp() {
         limit: 1,
         query_params: {
           order_by: [{column_id: $columnIdString, direction: desc}],
-          rules: [{column_id: $columnIdID, compare_value: [""] , operator: not_empty}]
+          rules: [{column_id: $columnIdID, compare_value: [""] , operator: is_not_empty}]
         }
       ) {
         items {
