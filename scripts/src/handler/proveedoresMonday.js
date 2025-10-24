@@ -1,13 +1,11 @@
-// sync.js (Versión corregida con ApiClient y .request())
+// sync.js (Versión corregida FINAL)
 
 import 'dotenv/config';
 
-// --- INICIO DE LA CORRECCIÓN DE IMPORTACIÓN ---
 // Importa el módulo CJS 'default'
 import mondaySdk from '@mondaydotcomorg/api';
 // Extrae la clase 'ApiClient' de él
 const { ApiClient } = mondaySdk;
-// --- FIN DE LA CORRECCIÓN DE IMPORTACIÓN ---
 
 // Importa las funciones de DATOS de SAP
 import { getAllSupplierData, createDeltaFilter } from '../services/supplierService.js';
@@ -18,9 +16,9 @@ import { getSapSession, sapLogout } from '../config/sap.js';
 const MONDAY_BOARD_ID = 18213048823;
 
 const COLUMN_IDS = {
-  "Name": "name", // Columna nativa "Elemento"
+  "Name": "name", 
   "Código SN": "text_mkwt7af2",
-  "RUC": "numeric_mkwtxtnh", // Tipo numérico
+  "RUC": "numeric_mkwtxtnh",
   "Nombre SN": "text_mkwt3xdn",
   "Creación SAP": "date_mkx1an41",
   "Última Actualización SAP": "date_mkx14xa9",
@@ -30,17 +28,15 @@ const COLUMN_IDS = {
 // --- FIN DE CONFIGURACIÓN ---
 
 
-// --- INICIO DE LA CORRECCIÓN DE INSTANCIACIÓN ---
 // Instanciamos la clase 'ApiClient' como dice la documentación
 const monday = new ApiClient({ 
   token: process.env.MONDAY_API_KEY,
-  apiVersion: "2024-01" // Usamos la API moderna
+  apiVersion: "2024-01" 
 });
-// --- FIN DE LA CORRECCIÓN DE INSTANCIACIÓN ---
 
 
 // ===================================================================
-// Funciones de Monday (¡Todas actualizadas a .request!)
+// Funciones de Monday (Corregidas)
 // ===================================================================
 
 /**
@@ -57,8 +53,9 @@ async function getGroupId(boardId, groupName) {
     }
   }`;
   try {
-    // 👇 CORREGIDO: .api() -> .request()
-    const response = await monday.request(query, { variables: { boardId: parseInt(boardId) } });
+    // 👇 CORRECCIÓN: Se quitó el wrapper { variables: ... }
+    const response = await monday.request(query, { boardId: parseInt(boardId) });
+    
     if (response.errors) {
        console.error("Error de API al buscar grupos:", response.errors);
        return null;
@@ -75,7 +72,10 @@ async function getGroupId(boardId, groupName) {
       return null;
     }
   } catch (err) {
-    console.error("Error al buscar grupos:", err.message);
+    // El error que viste (invalid type) es un error de GraphQL, 
+    // por lo que será capturado por 'response.errors' arriba.
+    // Este 'catch' es para errores de red (ej. fetch failed).
+    console.error("Error de RED/SDK al buscar grupos:", err.message, err);
     return null;
   }
 }
@@ -113,13 +113,11 @@ async function getLatestSyncTimestamp() {
   }`;
 
   try {
-    // 👇 CORREGIDO: .api() -> .request()
+    // 👇 CORRECCIÓN: Se quitó el wrapper { variables: ... }
     const response = await monday.request(query, {
-      variables: {
-        boardId: MONDAY_BOARD_ID,
-        columnIdString: dateColumnId,
-        columnIdID: dateColumnId
-      }
+      boardId: MONDAY_BOARD_ID,
+      columnIdString: dateColumnId,
+      columnIdID: dateColumnId
     });
 
     if (response.errors) {
@@ -168,13 +166,11 @@ async function findMondayItemByRUC_fixed(rucValue) {
   }`;
 
   try {
-    // 👇 CORREGIDO: .api() -> .request()
+    // 👇 CORRECCIÓN: Se quitó el wrapper { variables: ... }
     const response = await monday.request(query, {
-      variables: {
-        boardId: MONDAY_BOARD_ID,
-        columnId: rucColumnId,
-        columnValue: String(rucValue) 
-      }
+      boardId: MONDAY_BOARD_ID,
+      columnId: rucColumnId,
+      columnValue: String(rucValue) 
     });
 
     if (response.errors) {
@@ -217,14 +213,12 @@ function formatSapToMondayColumns(sapSupplier) {
     columnValues[COLUMN_IDS["Nombre SN"]] = sapSupplier.CardName || "";
   }
 
-  // Creación SAP (Solo Fecha)
   if (COLUMN_IDS["Creación SAP"] && sapSupplier.CreateDate) {
     columnValues[COLUMN_IDS["Creación SAP"]] = {
       "date": sapSupplier.CreateDate.split('T')[0]
     };
   }
 
-  // Última Actualización SAP (Fecha y Hora)
   if (COLUMN_IDS["Última Actualización SAP"] && sapSupplier.UpdateDate && sapSupplier.UpdateTime != null) {
     try {
       const date = new Date(sapSupplier.UpdateDate);
@@ -262,14 +256,12 @@ async function createMondayItem(itemName, columnValues, groupId) {
   }`;
 
   try {
-    // 👇 CORREGIDO: .api() -> .request()
+    // 👇 CORRECCIÓN: Se quitó el wrapper { variables: ... }
     await monday.request(query, {
-      variables: {
-        boardId: MONDAY_BOARD_ID,
-        groupId: groupId,
-        itemName: itemName,
-        columnValues: JSON.stringify(columnValues)
-      }
+      boardId: MONDAY_BOARD_ID,
+      groupId: groupId,
+      itemName: itemName,
+      columnValues: JSON.stringify(columnValues)
     });
     console.log(`✅ CREADO: ${itemName}`);
   } catch (err) {
@@ -292,13 +284,11 @@ async function updateMondayItem(itemId, itemName, columnValues) {
   }`;
 
   try {
-    // 👇 CORREGIDO: .api() -> .request()
+    // 👇 CORRECCIÓN: Se quitó el wrapper { variables: ... }
     await monday.request(query, {
-      variables: {
-        itemId: parseInt(itemId),
-        boardId: MONDAY_BOARD_ID,
-        columnValues: JSON.stringify(columnValues)
-      }
+      itemId: parseInt(itemId),
+      boardId: MONDAY_BOARD_ID,
+      columnValues: JSON.stringify(columnValues)
     });
     console.log(`🔄 ACTUALIZADO: ${itemName} (ID: ${itemId})`);
   } catch (err) {
@@ -337,13 +327,11 @@ async function batchCreateMondayItems(suppliers, groupId) {
     try {
       console.log(`Enviando lote ${Math.floor(i / CHUNK_SIZE) + 1}/${Math.ceil(suppliers.length / CHUNK_SIZE)}...`);
       
-      // 👇 CORREGIDO: .api() -> .request()
+      // 👇 CORRECCIÓN: Se quitó el wrapper { variables: ... }
       const response = await monday.request(query, {
-        variables: {
-          boardId: MONDAY_BOARD_ID,
-          groupId: groupId,
-          itemsToCreate: itemsToCreate
-        }
+        boardId: MONDAY_BOARD_ID,
+        groupId: groupId,
+        itemsToCreate: itemsToCreate
       });
 
       if (response.errors) {
