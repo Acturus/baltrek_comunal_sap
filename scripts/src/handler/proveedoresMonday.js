@@ -82,7 +82,11 @@ async function getLatestSyncTimestamp() {
  * Busca un item en Monday usando el valor de la columna RUC.
  * @returns {object | null} El item de Monday (con id) o null si no se encuentra.
  */
-async function findMondayItemByRUC(rucValue) {
+/**
+ * (RECOMENDADO) Busca un item en Monday usando el valor de la columna RUC.
+ * Esta versión maneja los errores de la API de forma más robusta.
+ */
+async function findMondayItemByRUC_fixed(rucValue) {
   const rucColumnId = COLUMN_IDS["RUC"];
   
   const query = `query($boardId: ID!, $columnId: String!, $columnValue: String!) {
@@ -108,11 +112,24 @@ async function findMondayItemByRUC(rucValue) {
       }
     });
 
+    // VERIFICACIÓN 1: El SDK reporta errores de GraphQL?
+    if (response.errors) {
+      console.error(`❌ Error de API al buscar RUC ${rucValue}:`, JSON.stringify(response.errors, null, 2));
+      return null;
+    }
+    
+    // VERIFICACIÓN 2: La respuesta tiene 'data'? (Contra rate limits)
+    if (!response.data) {
+      console.error(`❌ Error inesperado (sin 'data') al buscar RUC ${rucValue}.`, response);
+      return null;
+    }
+
     const items = response.data.items_page_by_column_values.items;
     return items.length > 0 ? items[0] : null;
 
   } catch (err) {
-    console.error(`Error buscando item con RUC ${rucValue}:`, err.message);
+    // Error de red o del SDK
+    console.error(`❌ Error de RED/SDK buscando item con RUC ${rucValue}:`, err.message);
     return null;
   }
 }
@@ -227,81 +244,151 @@ async function updateMondayItem(itemId, itemName, columnValues) {
   }
 }
 
+/**
+ * Crea items en Monday en lotes de 100.
+ * @param {Array<object>} suppliers - Lista de proveedores de SAP.
+ */
+async function batchCreateMondayItems(suppliers) {
+  console.log(`Iniciando creación en lote de ${suppliers.length} items...`);
+  
+  // Dividir el array de proveedores en lotes (chunks) de 100
+  const CHUNK_SIZE = 100; // Límite seguro para la API de Monday
+  let itemsCreated = 0;
 
-// --- FUNCIÓN PRINCIPAL ---
+  for (let i = 0; i < suppliers.length; i += CHUNK_SIZE) {
+    const batch = suppliers.slice(i, i + CHUNK_SIZE);
+    
+    // Convertir cada proveedor del lote al formato de Monday
+    const itemsToCreate = batch.map(supplier => {
+      const columnValues = formatSapToMondayColumns(supplier);
+      const itemName = supplier.CardName || supplier.CardCode;
+      return {
+        name: itemName,
+        column_values: columnValues
+      };
+    });
+
+    // Construir la mutación de GraphQL
+    // Usamos 'items_to_create' como variable tipo JSON
+    const query = `mutation($boardId: ID!, $itemsToCreate: [ItemCreateDetails!]!) {
+      create_multiple_items (
+        board_id: $boardId,
+        items: $itemsToCreate
+      ) {
+        id
+      }
+    }`;
+
+    try {
+      console.log(`Enviando lote ${Math.floor(i / CHUNK_SIZE) + 1}/${Math.ceil(suppliers.length / CHUNK_SIZE)} (Items: ${itemsToCreate.length})...`);
+      
+      await monday.api(query, {
+        variables: {
+          boardId: MONDAY_BOARD_ID,
+          itemsToCreate: itemsToCreate
+        }
+      });
+      
+      itemsCreated += batch.length;
+
+    } catch (err) {
+      console.error(`❌ ERROR al crear lote:`, err.message);
+      if (err.response && err.response.data) {
+        console.error("Detalle del error:", JSON.stringify(err.response.data, null, 2));
+      }
+      console.log("Se detiene la creación en lote para evitar más errores.");
+      return; // Detener si un lote falla
+    }
+  }
+
+  console.log(`✅ Creación en lote finalizada. ${itemsCreated} items creados.`);
+}
+
+
+// --- FUNCIÓN PRINCIPAL (MODIFICADA) ---
 async function main() {
   console.log('Iniciando script de sincronización SAP -> Monday...');
   
-  let axiosInstance = null; // Instancia de SAP
+  let axiosInstance = null;
 
   try {
-    // 1. Obtener la sesión de Axios para SAP
     axiosInstance = await getSapSession();
     
     if (!axiosInstance) {
       console.error("No se pudo iniciar sesión en SAP Service Layer. Abortando.");
-      return; // Salir del script
+      return;
     }
 
     // 2. Determinar si es sincronización completa o delta
     const lastSyncTimestamp = await getLatestSyncTimestamp();
     let sapFilter = null;
+    let isFullSync = false; // <-- Nueva variable
 
     if (lastSyncTimestamp) {
-      // Sincronización Delta
       console.log(`Modo Delta: Buscando cambios desde ${lastSyncTimestamp}`);
       sapFilter = createDeltaFilter(lastSyncTimestamp);
     } else {
-      // Sincronización Completa
       console.log("Modo Completo: Obteniendo todos los proveedores.");
+      isFullSync = true; // <-- Marcar como Sincronización Completa
     }
 
-    // 3. Obtener datos de SAP (completos o delta)
+    // 3. Obtener datos de SAP
     const suppliers = await getAllSupplierData(axiosInstance, sapFilter);
 
     if (!suppliers) {
       console.error("Falló la obtención de datos de SAP. Abortando.");
-      return; // Salir, el 'finally' se ejecutará
+      return;
     }
     
     if (suppliers.length === 0) {
       console.log("No se encontraron proveedores nuevos o actualizados en SAP. Sincronización finalizada.");
-      return; // Salir, el 'finally' se ejecutará
+      return;
     }
 
     console.log(`Procesando ${suppliers.length} registros de SAP...`);
 
-    // 4. Procesar y cargar datos en Monday
-    for (const supplier of suppliers) {
-      if (!supplier.FederalTaxID) {
-        console.warn(`Saltando proveedor ${supplier.CardCode} por no tener RUC (FederalTaxID).`);
-        continue;
-      }
+    // --- INICIO DE LÓGICA DE SINCRONIZACIÓN ---
+    
+    if (isFullSync) {
+      // **** MODO COMPLETO: Usar creación en lote ****
+      // Asume que el tablero está vacío y simplemente crea todo.
+      await batchCreateMondayItems(suppliers);
 
-      // Formatear datos para Monday
-      const columnValues = formatSapToMondayColumns(supplier);
-      // Usar CardName para el nombre del elemento, o CardCode si CardName está vacío
-      const itemName = supplier.CardName || supplier.CardCode; 
+    } else {
+      // **** MODO DELTA: Usar lógica de 1 en 1 (Upsert) ****
+      // (Este es el código que ya tenías, es correcto para pocos registros)
+      
+      // *** Nota: Recomiendo reemplazar tu 'findMondayItemByRUC' ***
+      // *** por la versión corregida de abajo para mejores logs de error ***
+      
+      console.log("Ejecutando lógica Delta (buscar y actualizar)...");
+      for (const supplier of suppliers) {
+        if (!supplier.FederalTaxID) {
+          console.warn(`Saltando proveedor ${supplier.CardCode} por no tener RUC (FederalTaxID).`);
+          continue;
+        }
 
-      // Buscar si el item ya existe por RUC
-      const existingItem = await findMondayItemByRUC(supplier.FederalTaxID);
+        const columnValues = formatSapToMondayColumns(supplier);
+        const itemName = supplier.CardName || supplier.CardCode; 
+        
+        // ** (Opcional pero recomendado) Reemplaza tu 'findMondayItemByRUC' **
+        // ** por la versión del Paso 3 para mejores logs de error **
+        const existingItem = await findMondayItemByRUC_fixed(supplier.FederalTaxID);
 
-      if (existingItem) {
-        // 5. Actualizar item existente
-        await updateMondayItem(existingItem.id, itemName, columnValues);
-      } else {
-        // 6. Crear nuevo item
-        await createMondayItem(itemName, columnValues);
+        if (existingItem) {
+          await updateMondayItem(existingItem.id, itemName, columnValues);
+        } else {
+          await createMondayItem(itemName, columnValues);
+        }
       }
     }
+    // --- FIN DE LÓGICA DE SINCRONIZACIÓN ---
 
     console.log("🎉 Sincronización completada.");
 
   } catch (error) {
-    // Capturar cualquier error inesperado durante la sincronización
     console.error("❌ Ocurrió un error inesperado durante la sincronización:", error);
   } finally {
-    // 5. Cerrar la sesión de SAP
     if (axiosInstance) {
       await sapLogout(axiosInstance);
     }
