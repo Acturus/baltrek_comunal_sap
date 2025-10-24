@@ -1,4 +1,4 @@
-import camposConsultaSAP from '../models/proveedoresModel.js';
+import { camposConsultaSAP } from '../models/proveedoresModel.js';
 
 /**
  * Obtiene datos de proveedores de SAP, manejando la paginación automáticamente.
