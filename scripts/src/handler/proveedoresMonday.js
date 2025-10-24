@@ -37,18 +37,22 @@ async function getLatestSyncTimestamp() {
 
   console.log(`Buscando última fecha de sincronización en Monday (Columna: ${dateColumnId})...`);
 
-  // 👇 LA CORRECCIÓN ESTÁ EN ESTA LÍNEA: $columnId: String! -> $columnId: ID!
-  const query = `query($boardId: ID!, $columnId: ID!) {
+  // --- INICIO DE LA CORRECCIÓN ---
+  // Definimos DOS variables: $columnIdString (String!) y $columnIdID (ID!)
+  const query = `query($boardId: ID!, $columnIdString: String!, $columnIdID: ID!) {
     boards(ids: [$boardId]) {
       items_page(
         limit: 1,
         query_params: {
-          order_by: [{column_id: $columnId, direction: desc}],
-          rules: [{column_id: $columnId, compare_value: [""] , operator: not_is_empty}]
+          // order_by usa la variable String!
+          order_by: [{column_id: $columnIdString, direction: desc}],
+          // rules usa la variable ID!
+          rules: [{column_id: $columnIdID, compare_value: [""] , operator: not_is_empty}]
         }
       ) {
         items {
-          column_values(ids: [$columnId]) {
+          // column_values(ids: ...) usa la variable String!
+          column_values(ids: [$columnIdString]) {
             value
             text
           }
@@ -56,17 +60,23 @@ async function getLatestSyncTimestamp() {
       }
     }
   }`;
+  // --- FIN DE LA CORRECCIÓN ---
 
   try {
     const response = await monday.api(query, {
-      variables: { boardId: MONDAY_BOARD_ID, columnId: dateColumnId }
+      variables: {
+        boardId: MONDAY_BOARD_ID,
+        // Pasamos el mismo ID a ambas variables
+        columnIdString: dateColumnId,
+        columnIdID: dateColumnId
+      }
     });
 
-    console.log("==================== RESPUESTA DE MONDAY (RAW) ====================");
-    console.log(JSON.stringify(response, null, 2));
-    console.log("===================================================================");
+    // (Ya no necesitamos el log RAW, lo quito)
+    // console.log("==================== RESPUESTA DE MONDAY (RAW) ====================");
+    // console.log(JSON.stringify(response, null, 2));
+    // console.log("===================================================================");
 
-    // --- VERIFICACIÓN MEJORADA ---
     if (response.errors) {
       console.error("Error de API al buscar última fecha:", JSON.stringify(response.errors, null, 2));
       return null;
@@ -75,8 +85,7 @@ async function getLatestSyncTimestamp() {
       console.error("Error: La respuesta de la API no contiene 'data' o 'boards'.", response);
       return null;
     }
-    // --- FIN DE VERIFICACIÓN ---
-
+    
     const items = response.data.boards[0].items_page.items;
 
     if (items.length > 0 && items[0].column_values[0].value) {
