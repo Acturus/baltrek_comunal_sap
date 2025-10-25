@@ -147,30 +147,31 @@ async function getLatestSyncTimestamp() {
  */
 async function findMondayItemByRUC_fixed(rucValue) {
   const rucColumnId = COLUMN_IDS["RUC"];
-  
-  // 👇 CORRECCIÓN: Usando 'items_by_column_values'
-  // Esta es la sintaxis de la API antigua que tu cuenta parece estar usando.
-  const query = `query($boardId: ID!, $columnId: String!, $columnValue: String!) {
-    items_page_by_column_values (
+
+  const query = `query($boardId: ID!, $rucColumnId: String!, $rucValue: String!) {
+    items_page_by_column_values(
       board_id: $boardId,
-      column_id: $columnId,
-      column_value: $columnValue,
-      limit: 1
+      limit: 1,
+      columns: [
+        { column_id: $rucColumnId, column_values: [$rucValue] }
+      ]
     ) {
-      id
-      name
+      items {
+        id
+        name
+      }
     }
   }`;
 
   try {
     const response = await monday.request(query, {
       boardId: MONDAY_BOARD_ID,
-      columnId: rucColumnId,
-      columnValue: String(rucValue) 
+      rucColumnId: rucColumnId,
+      // ¡OJO!: column_values deben ser strings para Numbers
+      rucValue: String(rucValue)
     });
 
-    // 👇 CORRECCIÓN: La respuesta ahora está en 'response.items_by_column_values'
-    const items = response.items_by_column_values;
+    const items = response.items_page_by_column_values.items || [];
     return items.length > 0 ? items[0] : null;
 
   } catch (err) {
@@ -182,6 +183,7 @@ async function findMondayItemByRUC_fixed(rucValue) {
     return null;
   }
 }
+
 
 /**
  * Formatea un objeto de proveedor SAP al formato de columna de Monday.
