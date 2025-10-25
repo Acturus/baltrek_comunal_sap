@@ -1,17 +1,10 @@
-// sync.js (Versión corregida FINAL)
 import 'dotenv/config';
-
-// Importa el módulo CJS 'default'
 import mondaySdk from '@mondaydotcomorg/api';
-// Extrae las clases 'ApiClient' y 'ClientError'
-const { ApiClient, ClientError } = mondaySdk;
-
-// Importa las funciones de DATOS de SAP
 import { getAllSupplierData, createDeltaFilter } from '../services/supplierService.js';
-// Importa las funciones de SESIÓN de SAP
 import { getSapSession, sapLogout } from '../config/sap.js';
 
-// --- CONFIGURACIÓN REQUERIDA (¡COMPLETADA!) ---
+const { ApiClient, ClientError } = mondaySdk;
+
 const MONDAY_BOARD_ID = 18213048823;
 
 const COLUMN_IDS = {
@@ -24,10 +17,7 @@ const COLUMN_IDS = {
   "Registro de creación": "pulse_log_mkx1jrw3",
   "Última actualización": "pulse_updated_mkx17xqq"
 };
-// --- FIN DE CONFIGURACIÓN ---
 
-
-// Instanciamos la clase 'ApiClient'
 const monday = new ApiClient({ 
   token: process.env.MONDAY_API_KEY,
   requestConfig: {
@@ -56,7 +46,6 @@ async function getGroupId(boardId, groupName) {
     }
   }`;
   try {
-    // 👇 CORRECCIÓN: Se quitó el .data
     const response = await monday.request(query, { boardId: parseInt(boardId) });
     const groups = response.boards[0].groups;
     const group = groups.find(g => g.title.trim().toLowerCase() === groupName.trim().toLowerCase());
@@ -70,7 +59,6 @@ async function getGroupId(boardId, groupName) {
       return null;
     }
   } catch (err) {
-    // 👇 CORRECCIÓN: Manejo de ClientError
     if (err instanceof ClientError) {
       console.error("Error de API al buscar grupos:", JSON.stringify(err.response.errors, null, 2));
     } else {
@@ -80,9 +68,8 @@ async function getGroupId(boardId, groupName) {
   }
 }
 
-
 /**
- * Obtiene el timestamp más reciente (versión corregida).
+ * Obtiene el timestamp más reciente
  */
 async function getLatestSyncTimestamp() {
   const dateColumnId = COLUMN_IDS["Última Actualización SAP"];
@@ -113,7 +100,6 @@ async function getLatestSyncTimestamp() {
   }`;
 
   try {
-    // 👇 CORRECCIÓN: Se quitó el .data
     const response = await monday.request(query, {
       boardId: MONDAY_BOARD_ID,
       columnIdString: dateColumnId,
@@ -128,10 +114,9 @@ async function getLatestSyncTimestamp() {
       return new Date(lastDate.replace(' ', 'T') + 'Z').toISOString();
     } else {
       console.log("No se encontraron fechas. Se ejecutará la sincronización completa.");
-      return null; // Primera sincronización
+      return null;
     }
   } catch (err) {
-    // 👇 CORRECCIÓN: Manejo de ClientError
     if (err instanceof ClientError) {
       console.error("Error de API al buscar última fecha:", JSON.stringify(err.response.errors, null, 2));
     } else {
@@ -145,7 +130,7 @@ async function getLatestSyncTimestamp() {
  * Busca un item en Monday usando el valor de la columna RUC
  * 
  */
-async function findMondayItemByRUC_fixed(rucValue) {
+async function findMondayItemByRUC(rucValue) {
   const rucColumnId = COLUMN_IDS["RUC"];
 
   const query = `query($boardId: ID!, $rucColumnId: String!, $rucValue: String!) {
@@ -307,7 +292,7 @@ async function updateMondayItem(itemId, itemName, columnValues) {
   }
 }
 
-// --- FUNCIÓN PRINCIPAL (Sin cambios en la lógica) ---
+// --- FUNCIÓN PRINCIPAL  ---
 async function main() {
   console.log('Iniciando script de sincronización SAP -> Monday...');
   
@@ -329,16 +314,10 @@ async function main() {
     }
 
     const lastSyncTimestamp = await getLatestSyncTimestamp();
-    let sapFilter = null;
-    let isFullSync = false;
+    let sapFilter = false;
 
-    if (lastSyncTimestamp) {
-      console.log(`Modo Delta: Buscando cambios desde ${lastSyncTimestamp}`);
+    if (lastSyncTimestamp)
       sapFilter = createDeltaFilter(lastSyncTimestamp);
-    } else {
-      console.log("Modo Completo: Obteniendo todos los proveedores.");
-      //isFullSync = true;
-    }
 
     const suppliers = await getAllSupplierData(axiosInstance, sapFilter);
 
@@ -346,32 +325,22 @@ async function main() {
       console.log("No se encontraron proveedores nuevos o actualizados en SAP. Sincronización finalizada.");
       return;
     }
+    
+    for (const supplier of suppliers) {
+      if (!supplier.FederalTaxID) {
+        console.warn(`Saltando proveedor ${supplier.CardCode} por no tener RUC (FederalTaxID).`);
+        continue;
+      }
 
-    console.log(`Procesando ${suppliers.length} registros de SAP...`);
-
-    if (isFullSync) {
-      console.log("Ejecutando lógica de Sincronización Completa (Lote)...");
-      await batchCreateMondayItems(suppliers, groupId); 
-
-    } else {
-      console.log("Ejecutando lógica Delta (buscar y actualizar)...");
+      const columnValues = formatSapToMondayColumns(supplier);
+      const itemName = supplier.CardName || supplier.CardCode; 
       
-      for (const supplier of suppliers) {
-        if (!supplier.FederalTaxID) {
-          console.warn(`Saltando proveedor ${supplier.CardCode} por no tener RUC (FederalTaxID).`);
-          continue;
-        }
+      const existingItem = await findMondayItemByRUC(supplier.FederalTaxID); 
 
-        const columnValues = formatSapToMondayColumns(supplier);
-        const itemName = supplier.CardName || supplier.CardCode; 
-        
-        const existingItem = await findMondayItemByRUC_fixed(supplier.FederalTaxID); 
-
-        if (existingItem) {
-          await updateMondayItem(existingItem.id, itemName, columnValues);
-        } else {
-          await createMondayItem(itemName, columnValues, groupId);
-        }
+      if (existingItem) {
+        await updateMondayItem(existingItem.id, itemName, columnValues);
+      } else {
+        await createMondayItem(itemName, columnValues, groupId);
       }
     }
 
@@ -386,5 +355,4 @@ async function main() {
   }
 }
 
-// Ejecutar la función principal
 main().catch(console.error);
